@@ -117,8 +117,22 @@ export function Editor() {
       return;
     }
 
-    // Enter to create note (only in create mode)
-    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && inputMode === 'create') {
+    // Cmd/Ctrl + Enter to create note (only in input mode)
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && inputMode === 'input') {
+      e.preventDefault();
+      handleCreateNote();
+      return;
+    }
+
+    // Plain Enter submits note, Shift+Enter keeps newline
+    if (
+      e.key === 'Enter' &&
+      inputMode === 'input' &&
+      !e.shiftKey &&
+      !e.metaKey &&
+      !e.ctrlKey &&
+      !e.altKey
+    ) {
       e.preventDefault();
       handleCreateNote();
     }
