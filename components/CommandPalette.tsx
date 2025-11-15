@@ -14,9 +14,9 @@ export function CommandPalette() {
   const isOpen = useStore(state => state.isCommandPaletteOpen);
   const setOpen = useStore(state => state.setCommandPaletteOpen);
   const createNote = useStore(state => state.createNote);
-  const setSelectedTag = useStore(state => state.setSelectedTag);
+  const setSelectedLabel = useStore(state => state.setSelectedLabel);
   const setKeyboardHelpOpen = useStore(state => state.setKeyboardHelpOpen);
-  const triggerSync = useStore(state => state.triggerSync);
+  const updateSyncStatus = useStore(state => state.updateSyncStatus);
 
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -29,7 +29,7 @@ export function CommandPalette() {
       key: 'n',
       ctrl: true,
       action: () => {
-        createNote();
+        createNote('');
         setOpen(false);
       },
       description: 'Create new note',
@@ -41,7 +41,7 @@ export function CommandPalette() {
       key: 'a',
       ctrl: true,
       action: () => {
-        setSelectedTag(null);
+        setSelectedLabel(null);
         setOpen(false);
       },
       description: 'Show all notes',
@@ -54,7 +54,7 @@ export function CommandPalette() {
       ctrl: true,
       shift: true,
       action: () => {
-        triggerSync();
+        updateSyncStatus();
         setOpen(false);
       },
       description: 'Sync now',

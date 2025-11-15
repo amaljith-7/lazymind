@@ -17,7 +17,7 @@ export async function addNoteToSyncQueue(
   const queueItem: SyncQueueItem = {
     id: uuidv4(),
     operationType,
-    noteId: note.id,
+    noteId: note.uuid,
     payload: note,
     createdAt: Date.now(),
     attemptCount: 0,
@@ -116,19 +116,20 @@ export async function clearCompletedSyncItems(): Promise<number> {
  */
 export async function updateNoteSyncStatus(
   noteId: string,
-  status: 'pending' | 'syncing' | 'synced' | 'error',
-  error?: string
+  status: 'pending' | 'synced' | 'error'
 ): Promise<boolean> {
-  const note = await db.notes.get(noteId);
+  const note = await db.notes.where('uuid').equals(noteId).first();
 
   if (!note) {
     return false;
   }
 
-  await db.notes.update(noteId, {
-    syncStatus: status,
-    syncError: error || null,
-    lastSyncAttempt: Date.now()
+  if (note.id === undefined) {
+    return false;
+  }
+
+  await db.notes.update(note.id, {
+    syncStatus: status
   });
 
   return true;

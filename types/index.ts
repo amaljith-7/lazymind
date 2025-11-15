@@ -48,6 +48,18 @@ export interface SyncStatus {
   syncError: string | null;
 }
 
+export interface SyncQueueItem {
+  id: string;
+  operationType: 'create' | 'update' | 'delete';
+  noteId: string;
+  payload: Note;
+  createdAt: number;
+  attemptCount: number;
+  lastAttemptAt: number | null;
+  status: 'pending' | 'completed' | 'failed';
+  errorMessage: string | null;
+}
+
 // Helper type for creating new notes (omits auto-generated fields)
 export type CreateNoteInput = Pick<Note, 'content'> & {
   images?: File[];
@@ -65,3 +77,13 @@ export interface ParsedNote {
   labels: string[];
   isTodo: boolean;
 }
+
+// Tag hierarchy structure
+export interface TagHierarchy {
+  root: string;
+  full: string;
+  parts: string[];
+}
+
+// Tag type (alias for Folder since folders come from #hashtags)
+export type Tag = Folder;

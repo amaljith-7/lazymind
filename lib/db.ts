@@ -1,6 +1,6 @@
 // IndexedDB setup using Dexie.js
 import Dexie, { type EntityTable } from 'dexie';
-import type { Note, Folder, Label, ImageAttachment } from '@/types';
+import type { Note, Folder, Label, ImageAttachment, SyncQueueItem } from '@/types';
 
 // Extend Dexie with our typed tables
 class LazyMindDatabase extends Dexie {
@@ -8,6 +8,7 @@ class LazyMindDatabase extends Dexie {
   folders!: EntityTable<Folder, 'id'>;
   labels!: EntityTable<Label, 'id'>;
   images!: EntityTable<ImageAttachment, 'id'>;
+  syncQueue!: EntityTable<SyncQueueItem, 'id'>;
 
   constructor() {
     super('LazyMindDB');
@@ -47,6 +48,14 @@ class LazyMindDatabase extends Dexie {
         &uuid,
         noteId,
         uploadedAt
+      `,
+
+      // Sync queue table
+      syncQueue: `
+        &id,
+        status,
+        createdAt,
+        noteId
       `
     });
   }

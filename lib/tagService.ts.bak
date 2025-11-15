@@ -21,7 +21,7 @@ import type { Tag } from '@/types';
  */
 export async function getChildTags(parentTag: string): Promise<Tag[]> {
   const allTags = await dbManager.getAllTags();
-  return allTags.filter(tag => isChildOf(tag.id, parentTag));
+  return allTags.filter(tag => isChildOf(tag.name, parentTag));
 }
 
 /**

@@ -4,7 +4,7 @@ import { useStore, selectSyncStatus } from '@/lib/store';
 
 export function TopBar() {
   const syncStatus = useStore(selectSyncStatus);
-  const triggerSync = useStore(state => state.triggerSync);
+  const updateSyncStatus = useStore(state => state.updateSyncStatus);
 
   // Determine sync indicator color
   const getSyncColor = () => {
@@ -43,7 +43,7 @@ export function TopBar() {
       <div className="flex items-center gap-4">
         {/* Sync indicator */}
         <button
-          onClick={triggerSync}
+          onClick={updateSyncStatus}
           disabled={syncStatus.isSyncing}
           className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 transition-colors disabled:opacity-50"
           title={syncStatus.syncError || 'Click to sync'}

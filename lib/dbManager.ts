@@ -516,3 +516,66 @@ export async function refreshAllData() {
     notes: await getAllNotes(),
   };
 }
+
+// ============================================================================
+// TAG OPERATIONS (Stubs for tagService.ts compatibility)
+// Note: Tags are folders in this implementation
+// ============================================================================
+
+/**
+ * Get all tags (returns all folders)
+ */
+export async function getAllTags(): Promise<Folder[]> {
+  return getAllFolders();
+}
+
+/**
+ * Get tag by name (returns folder by name)
+ */
+export async function getTagById(tagName: string): Promise<Folder | null> {
+  return (await db.folders.where('name').equals(tagName).first()) || null;
+}
+
+/**
+ * Get or create a tag (folder)
+ */
+export async function getOrCreateTag(tagName: string): Promise<Folder> {
+  const normalized = normalizeFolderName(tagName);
+  const existing = await db.folders.where('name').equals(normalized).first();
+  
+  if (existing) {
+    return existing;
+  }
+
+  const folder: Folder = {
+    name: normalized,
+    noteCount: 0,
+    createdAt: Date.now(),
+  };
+
+  const id = await db.folders.add(folder);
+  return { ...folder, id };
+}
+
+/**
+ * Delete a tag (folder)
+ */
+export async function deleteTag(tagName: string, skipCountUpdate?: boolean): Promise<boolean> {
+  const folder = await db.folders.where('name').equals(tagName).first();
+  
+  if (!folder || !folder.id) {
+    return false;
+  }
+
+  await db.folders.delete(folder.id);
+  return true;
+}
+
+/**
+ * Update tag color (stub - Folder type doesn't have color field)
+ */
+export async function updateTagColor(tagName: string, color: string): Promise<boolean> {
+  // Stub implementation - Folder type doesn't support color in current schema
+  console.warn('updateTagColor is not implemented - Folder type does not have color field');
+  return false;
+}
