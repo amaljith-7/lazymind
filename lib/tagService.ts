@@ -1,0 +1,375 @@
+// Advanced tag management service
+'use client';
+
+import { db } from './db';
+import * as dbManager from './dbManager';
+import {
+  getParentTag,
+  getAncestorTags,
+  isChildOf,
+  createHierarchyString,
+  getDisplayName
+} from './tagParser';
+import type { Tag } from '@/types';
+
+// ============================================================================
+// TAG CRUD OPERATIONS (Extended from dbManager)
+// ============================================================================
+
+/**
+ * Get children of a specific tag
+ */
+export async function getChildTags(parentTag: string): Promise<Tag[]> {
+  const allTags = await dbManager.getAllTags();
+  return allTags.filter(tag => isChildOf(tag.id, parentTag));
+}
+
+/**
+ * Merge multiple tags into one target tag
+ * Moves all notes from source tags to target tag
+ */
+export async function mergeTagsIntoOne(
+  sourceTags: string[],
+  targetTag: string
+): Promise<boolean> {
+  try {
+    await db.transaction('rw', [db.notes, db.tags], async () => {
+      // Get or create target tag
+      await dbManager.getOrCreateTag(targetTag);
+
+      // Process each source tag
+      for (const sourceTag of sourceTags) {
+        const normalizedSource = sourceTag.toLowerCase();
+
+        // Skip if source is same as target
+        if (normalizedSource === targetTag.toLowerCase()) continue;
+
+        // Find all notes with this source tag
+        const notes = await db.notes
+          .where('tags')
+          .equals(normalizedSource)
+          .toArray();
+
+        // Update each note: replace source tag with target tag
+        for (const note of notes) {
+          const updatedTags = note.tags.map(t =>
+            t === normalizedSource ? targetTag.toLowerCase() : t
+          );
+
+          // Remove duplicates
+          const uniqueTags = Array.from(new Set(updatedTags));
+
+          await db.notes.update(note.id, {
+            tags: uniqueTags,
+            updatedAt: Date.now(),
+            syncStatus: 'pending'
+          });
+        }
+
+        // Delete the source tag
+        await dbManager.deleteTag(normalizedSource, false);
+      }
+
+      // Update note count for target tag
+      const targetNoteCount = await db.notes
+        .where('tags')
+        .equals(targetTag.toLowerCase())
+        .count();
+
+      await db.tags.update(targetTag.toLowerCase(), {
+        noteCount: targetNoteCount
+      });
+    });
+
+    return true;
+  } catch (error) {
+    console.error('Failed to merge tags:', error);
+    return false;
+  }
+}
+
+/**
+ * Split a tag into multiple tags
+ * Creates new tags and distributes notes
+ */
+export async function splitTag(
+  sourceTag: string,
+  targetTags: string[],
+  distribution: Record<string, string[]> // noteId -> targetTag mapping
+): Promise<boolean> {
+  try {
+    await db.transaction('rw', [db.notes, db.tags], async () => {
+      // Create all target tags
+      for (const tag of targetTags) {
+        await dbManager.getOrCreateTag(tag);
+      }
+
+      // Update notes according to distribution
+      for (const [noteId, newTags] of Object.entries(distribution)) {
+        const note = await db.notes.get(noteId);
+        if (!note) continue;
+
+        // Remove source tag and add new tags
+        const updatedTags = note.tags
+          .filter(t => t !== sourceTag.toLowerCase())
+          .concat(newTags.map(t => t.toLowerCase()));
+
+        // Remove duplicates
+        const uniqueTags = Array.from(new Set(updatedTags));
+
+        await db.notes.update(noteId, {
+          tags: uniqueTags,
+          updatedAt: Date.now(),
+          syncStatus: 'pending'
+        });
+      }
+
+      // Delete source tag if no notes left
+      const remainingCount = await db.notes
+        .where('tags')
+        .equals(sourceTag.toLowerCase())
+        .count();
+
+      if (remainingCount === 0) {
+        await dbManager.deleteTag(sourceTag, false);
+      }
+
+      // Update note counts for all affected tags
+      for (const tag of targetTags) {
+        const count = await db.notes
+          .where('tags')
+          .equals(tag.toLowerCase())
+          .count();
+
+        await db.tags.update(tag.toLowerCase(), { noteCount: count });
+      }
+    });
+
+    return true;
+  } catch (error) {
+    console.error('Failed to split tag:', error);
+    return false;
+  }
+}
+
+/**
+ * Batch update tag colors
+ */
+export async function batchUpdateTagColors(
+  updates: Array<{ tagName: string; color: string }>
+): Promise<number> {
+  let updatedCount = 0;
+
+  await db.transaction('rw', db.tags, async () => {
+    for (const { tagName, color } of updates) {
+      const success = await dbManager.updateTagColor(tagName, color);
+      if (success) updatedCount++;
+    }
+  });
+
+  return updatedCount;
+}
+
+/**
+ * Get tag usage statistics
+ */
+export async function getTagStatistics(tagName: string): Promise<{
+  noteCount: number;
+  childCount: number;
+  recentNoteIds: string[];
+  createdAt: number;
+}> {
+  const tag = await dbManager.getTagById(tagName.toLowerCase());
+
+  if (!tag) {
+    throw new Error(`Tag not found: ${tagName}`);
+  }
+
+  const childTags = await getChildTags(tagName.toLowerCase());
+
+  const recentNotes = await db.notes
+    .where('tags')
+    .equals(tagName.toLowerCase())
+    .reverse()
+    .sortBy('updatedAt');
+
+  return {
+    noteCount: tag.noteCount,
+    childCount: childTags.length,
+    recentNoteIds: recentNotes.slice(0, 5).map(n => n.id),
+    createdAt: tag.createdAt
+  };
+}
+
+/**
+ * Find unused tags (tags with 0 notes)
+ */
+export async function findUnusedTags(): Promise<Tag[]> {
+  const allTags = await dbManager.getAllTags();
+  return allTags.filter(tag => tag.noteCount === 0);
+}
+
+/**
+ * Clean up unused tags
+ */
+export async function cleanupUnusedTags(): Promise<number> {
+  const unusedTags = await findUnusedTags();
+
+  await db.transaction('rw', db.tags, async () => {
+    for (const tag of unusedTags) {
+      await db.tags.delete(tag.id);
+    }
+  });
+
+  return unusedTags.length;
+}
+
+/**
+ * Get related tags (tags that frequently appear together)
+ */
+export async function getRelatedTags(tagName: string, limit: number = 5): Promise<Tag[]> {
+  const normalizedTag = tagName.toLowerCase();
+
+  // Get all notes with this tag
+  const notesWithTag = await db.notes
+    .where('tags')
+    .equals(normalizedTag)
+    .toArray();
+
+  // Count co-occurrences
+  const coOccurrences: Record<string, number> = {};
+
+  for (const note of notesWithTag) {
+    for (const otherTag of note.tags) {
+      if (otherTag !== normalizedTag) {
+        coOccurrences[otherTag] = (coOccurrences[otherTag] || 0) + 1;
+      }
+    }
+  }
+
+  // Sort by frequency and get tag details
+  const sortedTags = Object.entries(coOccurrences)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, limit)
+    .map(([tagId]) => tagId);
+
+  const tags = await Promise.all(
+    sortedTags.map(tagId => dbManager.getTagById(tagId))
+  );
+
+  return tags.filter((tag): tag is Tag => tag !== null);
+}
+
+/**
+ * Suggest tag names based on note content
+ * Uses simple keyword extraction
+ */
+export async function suggestTagsForContent(content: string): Promise<string[]> {
+  // Get all existing tags
+  const allTags = await dbManager.getAllTags();
+
+  // Simple keyword extraction (can be enhanced with NLP)
+  const words = content
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter(w => w.length > 3);
+
+  // Find tags that match content keywords
+  const suggestions: Array<{ tag: string; score: number }> = [];
+
+  for (const tag of allTags) {
+    const tagWords = tag.id.split('/');
+    let score = 0;
+
+    for (const tagWord of tagWords) {
+      if (words.includes(tagWord)) {
+        score += 2; // Exact match
+      } else if (words.some(w => w.includes(tagWord) || tagWord.includes(w))) {
+        score += 1; // Partial match
+      }
+    }
+
+    if (score > 0) {
+      suggestions.push({ tag: tag.id, score });
+    }
+  }
+
+  // Sort by score and return top suggestions
+  return suggestions
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 5)
+    .map(s => s.tag);
+}
+
+/**
+ * Validate tag hierarchy consistency
+ * Ensures all parent tags exist for child tags
+ */
+export async function validateTagHierarchy(): Promise<{
+  isValid: boolean;
+  missingParents: string[];
+}> {
+  const allTags = await dbManager.getAllTags();
+  const missingParents: string[] = [];
+
+  for (const tag of allTags) {
+    const ancestors = getAncestorTags(tag.id);
+
+    for (const ancestor of ancestors) {
+      const exists = allTags.some(t => t.id === ancestor);
+
+      if (!exists && !missingParents.includes(ancestor)) {
+        missingParents.push(ancestor);
+      }
+    }
+  }
+
+  return {
+    isValid: missingParents.length === 0,
+    missingParents
+  };
+}
+
+/**
+ * Auto-create missing parent tags
+ */
+export async function createMissingParentTags(): Promise<number> {
+  const { missingParents } = await validateTagHierarchy();
+
+  for (const parentTag of missingParents) {
+    await dbManager.getOrCreateTag(parentTag);
+  }
+
+  return missingParents.length;
+}
+
+/**
+ * Export tags as JSON
+ */
+export async function exportTags(): Promise<string> {
+  const tags = await dbManager.getAllTags();
+  return JSON.stringify(tags, null, 2);
+}
+
+/**
+ * Import tags from JSON
+ */
+export async function importTags(jsonData: string): Promise<number> {
+  try {
+    const tags: Tag[] = JSON.parse(jsonData);
+    let importedCount = 0;
+
+    await db.transaction('rw', db.tags, async () => {
+      for (const tag of tags) {
+        await db.tags.put(tag);
+        importedCount++;
+      }
+    });
+
+    return importedCount;
+  } catch (error) {
+    console.error('Failed to import tags:', error);
+    return 0;
+  }
+}
