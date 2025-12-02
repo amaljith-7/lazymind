@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect, KeyboardEvent, useMemo } from 'react';
+import React, { useState, useRef, useEffect, KeyboardEvent, useMemo, ReactElement } from 'react';
 import Editor from 'react-simple-code-editor';
 
 interface HighlightedTextareaProps {
@@ -51,7 +51,7 @@ export function HighlightedTextarea({
   const highlight = (code: string) => {
     if (!code) return <br />; // Return br for empty lines to maintain height
 
-    const parts: JSX.Element[] = [];
+    const parts: ReactElement[] = [];
     let lastIndex = 0;
     
     // Regex for tags (including escaped ones)

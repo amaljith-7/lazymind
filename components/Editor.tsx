@@ -81,7 +81,7 @@ export function Editor() {
   };
 
   // Handle Enter key
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     // Escape to hide suggestions
     if (e.key === 'Escape' && showSuggestions) {
       e.preventDefault();
