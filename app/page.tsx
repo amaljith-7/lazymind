@@ -5,7 +5,6 @@ import { useStore } from '@/lib/store';
 import { Sidebar } from '@/components/Sidebar';
 import { NotesList } from '@/components/NotesList';
 import { Editor } from '@/components/Editor';
-import { NoteEditor } from '@/components/NoteEditor';
 import { CommandPalette } from '@/components/CommandPalette';
 import { GlobalShortcuts } from '@/components/GlobalShortcuts';
 import { KeyboardHelpModal } from '@/components/KeyboardHelpModal';
@@ -54,9 +53,6 @@ export default function Home() {
           <NotesList />
           <Editor />
         </div>
-
-        {/* Note Editor (opens when a note is selected) */}
-        <NoteEditor />
       </div>
     </>
   );

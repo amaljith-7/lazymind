@@ -1,21 +1,26 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { useStore, selectNotes, selectFolders, selectLabels } from '@/lib/store';
-import { NotepadText, Image as ImageIcon, AudioLines, CheckCircle2, Circle } from 'lucide-react';
+import { NotepadText, Image as ImageIcon, AudioLines, CheckCircle2, Circle, Trash2 } from 'lucide-react';
+import { HighlightedTextarea } from '@/components/HighlightedTextarea';
 import type { Note } from '@/types';
 
 export function NotesList() {
   const notes = useStore(selectNotes);
   const folders = useStore(selectFolders);
   const labels = useStore(selectLabels);
-  const selectedNoteUuid = useStore(state => state.selectedNoteUuid);
   const selectedFolder = useStore(state => state.selectedFolder);
   const selectedLabel = useStore(state => state.selectedLabel);
-  const setSelectedNote = useStore(state => state.setSelectedNote);
   const toggleTodoCompletion = useStore(state => state.toggleTodoCompletion);
+  const updateNote = useStore(state => state.updateNote);
+  const deleteNote = useStore(state => state.deleteNote);
 
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
+  const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
+  const [editContent, setEditContent] = useState('');
+  const [hoveredNoteId, setHoveredNoteId] = useState<string | null>(null);
+  const saveTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined);
 
   // Get the display name for the current view
   const getViewTitle = () => {
@@ -57,10 +62,64 @@ export function NotesList() {
     }
   };
 
+  // Handle note click to edit
+  const handleNoteClick = (note: Note) => {
+    setEditingNoteId(note.uuid);
+    setEditContent(note.content);
+  };
+
+  // Handle content change with debounced save
+  const handleContentChange = useCallback((noteUuid: string, newContent: string) => {
+    setEditContent(newContent);
+
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+    }
+
+    saveTimeoutRef.current = setTimeout(async () => {
+      await updateNote(noteUuid, newContent);
+    }, 500);
+  }, [updateNote]);
+
+  // Handle click outside to exit edit mode
+  const handleClickOutside = useCallback(() => {
+    setEditingNoteId(null);
+    setEditContent('');
+  }, []);
+
+  // Auto-focus when editing
+  useEffect(() => {
+    if (editingNoteId) {
+      // Focus handled by HighlightedTextarea autoFocus prop
+    }
+  }, [editingNoteId]);
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+    };
+  }, []);
+
   // Handle todo checkbox click
   const handleTodoToggle = async (e: React.MouseEvent, noteUuid: string) => {
     e.stopPropagation(); // Prevent note selection
     await toggleTodoCompletion(noteUuid);
+  };
+
+  // Handle delete
+  const handleDelete = async (e: React.MouseEvent, noteUuid: string) => {
+    e.stopPropagation();
+    const confirmed = confirm('Are you sure you want to delete this note?');
+    if (confirmed) {
+      await deleteNote(noteUuid);
+      if (editingNoteId === noteUuid) {
+        setEditingNoteId(null);
+        setEditContent('');
+      }
+    }
   };
 
   // Get folder color
@@ -85,9 +144,9 @@ export function NotesList() {
   };
 
   return (
-    <div className="flex-1 flex flex-col">
-      {/* Header */}
-      <div className="px-[101px] pt-10">
+    <div className="flex-1 flex flex-col overflow-hidden">
+      {/* Header - Fixed */}
+      <div className="px-[101px] pt-10 flex-shrink-0">
         {/* Title */}
         <h1 className="text-[28px] font-medium text-black mb-3">
           {getViewTitle()}
@@ -135,8 +194,10 @@ export function NotesList() {
             </button>
           </div>
         </div>
+      </div>
 
-        {/* Notes Grid/List */}
+      {/* Scrollable Notes Container */}
+      <div className="flex-1 overflow-y-auto px-[101px]">
         <div className="space-y-[29px] pb-[180px]">
           {notes.length === 0 ? (
             <div className="text-center text-gray-500 py-20">
@@ -144,77 +205,111 @@ export function NotesList() {
             </div>
           ) : (
             notes.map(note => {
-              const isSelected = note.uuid === selectedNoteUuid;
+              const isEditing = editingNoteId === note.uuid;
+              const isHovered = hoveredNoteId === note.uuid;
               const hasImages = note.imageAttachments && note.imageAttachments.length > 0;
 
               return (
-                <button
+                <div
                   key={note.uuid}
-                  onClick={() => setSelectedNote(note.uuid)}
-                  className={`w-full bg-white border border-[#E9E9E9] rounded-[18px] p-[18px] flex flex-col gap-2 text-left transition-all hover:shadow-md ${
-                    isSelected ? 'ring-2 ring-blue-500' : ''
-                  }`}
+                  onMouseEnter={() => setHoveredNoteId(note.uuid)}
+                  onMouseLeave={() => setHoveredNoteId(null)}
+                  className="relative w-full bg-white border border-[#E9E9E9] rounded-[18px] p-[18px] transition-all hover:shadow-md"
                 >
-                  {/* Title Row with Todo Checkbox */}
-                  <div className="flex items-start gap-3">
-                    {/* Todo Checkbox */}
-                    {note.isTodo && (
-                      <button
-                        onClick={(e) => handleTodoToggle(e, note.uuid)}
-                        className="flex-shrink-0 mt-0.5 hover:opacity-70 transition-opacity"
-                      >
-                        {note.isCompleted ? (
-                          <CheckCircle2 className="w-5 h-5 text-green-500" />
-                        ) : (
-                          <Circle className="w-5 h-5 text-gray-400" />
-                        )}
-                      </button>
-                    )}
+                  {/* Delete button on hover */}
+                  {isHovered && !isEditing && (
+                    <button
+                      onClick={(e) => handleDelete(e, note.uuid)}
+                      className="absolute top-3 right-3 p-2 bg-white hover:bg-red-50 rounded-lg transition-colors shadow-sm border border-gray-200 z-10"
+                      title="Delete note"
+                    >
+                      <Trash2 className="w-4 h-4 text-red-600" />
+                    </button>
+                  )}
 
-                    {/* Note Title */}
-                    <h3 className={`text-[15px] font-medium flex-1 ${
-                      note.isCompleted ? 'line-through text-gray-400' : 'text-black'
-                    }`}>
-                      {getNoteTitle(note)}
-                    </h3>
-
-                    {/* Image indicator */}
-                    {hasImages && (
-                      <ImageIcon className="w-4 h-4 text-gray-400 flex-shrink-0" />
-                    )}
-                  </div>
-
-                  {/* Folders, Labels and Date Row */}
-                  <div className="flex items-center justify-between flex-wrap gap-2">
-                    {/* Folders and Labels */}
-                    <div className="flex items-center gap-3 text-[13px] flex-wrap">
-                      {/* Folders */}
-                      {note.folders.map(folderName => (
-                        <span
-                          key={`folder-${folderName}`}
-                          style={{ color: getFolderColor(folderName) }}
-                        >
-                          #{folderName}
-                        </span>
-                      ))}
-
-                      {/* Labels */}
-                      {note.labels.map(labelName => (
-                        <span
-                          key={`label-${labelName}`}
-                          style={{ color: getLabelColor(labelName) }}
-                        >
-                          !{labelName}
-                        </span>
-                      ))}
+                  {isEditing ? (
+                    <div className="flex flex-col gap-2">
+                      <HighlightedTextarea
+                        value={editContent}
+                        onChange={(newContent) => handleContentChange(note.uuid, newContent)}
+                        onBlur={handleClickOutside}
+                        className="w-full text-[15px] text-gray-900 placeholder-gray-400 leading-relaxed"
+                        minHeight="120px"
+                        placeholder="Start typing... Use #folders and !labels to organize"
+                        autoFocus
+                      />
+                      <div className="flex items-center justify-between text-xs text-gray-400">
+                        <span>Click outside to save and close</span>
+                        <span>{formatDate(note.updatedAt)}</span>
+                      </div>
                     </div>
+                  ) : (
+                    <div
+                      onClick={() => handleNoteClick(note)}
+                      className="w-full flex flex-col gap-2 text-left cursor-pointer"
+                    >
+                      {/* Title Row with Todo Checkbox */}
+                      <div className="flex items-start gap-3">
+                        {/* Todo Checkbox */}
+                        {note.isTodo && (
+                          <button
+                            onClick={(e) => handleTodoToggle(e, note.uuid)}
+                            className="flex-shrink-0 mt-0.5 hover:opacity-70 transition-opacity"
+                          >
+                            {note.isCompleted ? (
+                              <CheckCircle2 className="w-5 h-5 text-green-500" />
+                            ) : (
+                              <Circle className="w-5 h-5 text-gray-400" />
+                            )}
+                          </button>
+                        )}
 
-                    {/* Date */}
-                    <span className="text-xs text-gray-400 ml-auto">
-                      {formatDate(note.updatedAt)}
-                    </span>
-                  </div>
-                </button>
+                        {/* Note Title */}
+                        <h3 className={`text-[15px] font-medium flex-1 ${
+                          note.isCompleted ? 'line-through text-gray-400' : 'text-black'
+                        }`}>
+                          {getNoteTitle(note)}
+                        </h3>
+
+                        {/* Image indicator */}
+                        {hasImages && (
+                          <ImageIcon className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                        )}
+                      </div>
+
+                      {/* Folders, Labels and Date Row */}
+                      <div className="flex items-center justify-between flex-wrap gap-2">
+                        {/* Folders and Labels */}
+                        <div className="flex items-center gap-3 text-[13px] flex-wrap">
+                          {/* Folders */}
+                          {note.folders.map(folderName => (
+                            <span
+                              key={`folder-${folderName}`}
+                              style={{ color: getFolderColor(folderName) }}
+                            >
+                              #{folderName}
+                            </span>
+                          ))}
+
+                          {/* Labels */}
+                          {note.labels.map(labelName => (
+                            <span
+                              key={`label-${labelName}`}
+                              style={{ color: getLabelColor(labelName) }}
+                            >
+                              !{labelName}
+                            </span>
+                          ))}
+                        </div>
+
+                        {/* Date */}
+                        <span className="text-xs text-gray-400 ml-auto">
+                          {formatDate(note.updatedAt)}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </div>
               );
             })
           )}

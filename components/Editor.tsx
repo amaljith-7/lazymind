@@ -4,6 +4,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { useStore, selectInputMode } from '@/lib/store';
 import { ArrowUp, ImagePlus, X } from 'lucide-react';
 import { suggestFolders, suggestLabels } from '@/lib/noteParsing';
+import { HighlightedTextarea } from '@/components/HighlightedTextarea';
 import type { Folder, Label } from '@/types';
 
 export function Editor() {
@@ -19,7 +20,6 @@ export function Editor() {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [currentTyping, setCurrentTyping] = useState<{ type: 'folder' | 'label', query: string } | null>(null);
 
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Handle creating a new note
@@ -29,9 +29,6 @@ export function Editor() {
     await createNote(content, images);
     setContent('');
     setImages([]);
-
-    // Focus back on textarea
-    textareaRef.current?.focus();
   }, [content, images, createNote]);
 
   // Handle search mode - update search query as user types
@@ -44,32 +41,8 @@ export function Editor() {
   // Handle auto-suggestions for folders and labels
   useEffect(() => {
     const detectTyping = async () => {
-      const cursorPos = textareaRef.current?.selectionStart || 0;
-      const textBeforeCursor = content.slice(0, cursorPos);
-
-      // Check for #folder typing
-      const folderMatch = textBeforeCursor.match(/#([a-z0-9_]*)$/i);
-      if (folderMatch) {
-        const query = folderMatch[1];
-        const suggestions = await suggestFolders(query);
-        setFolderSuggestions(suggestions);
-        setCurrentTyping({ type: 'folder', query });
-        setShowSuggestions(suggestions.length > 0);
-        return;
-      }
-
-      // Check for !label typing
-      const labelMatch = textBeforeCursor.match(/!([^\s]*)$/);
-      if (labelMatch) {
-        const query = labelMatch[1];
-        const suggestions = await suggestLabels(query);
-        setLabelSuggestions(suggestions);
-        setCurrentTyping({ type: 'label', query });
-        setShowSuggestions(suggestions.length > 0);
-        return;
-      }
-
-      // No match - hide suggestions
+      // For now, disable auto-suggestions with contenteditable
+      // Can be enhanced later to detect cursor position in contenteditable
       setShowSuggestions(false);
       setCurrentTyping(null);
     };
@@ -81,9 +54,9 @@ export function Editor() {
   const selectSuggestion = (suggestion: Folder | Label) => {
     if (!currentTyping) return;
 
-    const cursorPos = textareaRef.current?.selectionStart || 0;
-    const textBeforeCursor = content.slice(0, cursorPos);
-    const textAfterCursor = content.slice(cursorPos);
+    const cursorPosEstimate = content.length; // Fallback to end
+    const textBeforeCursor = content.slice(0, cursorPosEstimate);
+    const textAfterCursor = content.slice(cursorPosEstimate);
 
     let newText = '';
     if (currentTyping.type === 'folder') {
@@ -94,7 +67,6 @@ export function Editor() {
 
     setContent(newText);
     setShowSuggestions(false);
-    textareaRef.current?.focus();
   };
 
   // Handle image upload
@@ -109,7 +81,7 @@ export function Editor() {
   };
 
   // Handle Enter key
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     // Escape to hide suggestions
     if (e.key === 'Escape' && showSuggestions) {
       e.preventDefault();
@@ -141,7 +113,7 @@ export function Editor() {
   return (
     <div className="fixed bottom-0 left-[232px] right-0 px-[101px] pb-[36px]">
       {/* Input Box */}
-      <div className="relative w-full max-w-[632px] mx-auto bg-white border border-[#E8E8E8] rounded-[18px] p-[18px]">
+      <div className="relative w-full bg-white border border-[#E8E8E8] rounded-[18px] p-[18px]">
         {/* Suggestions Dropdown */}
         {showSuggestions && currentTyping && (
           <div className="absolute bottom-full left-0 right-0 mb-2 bg-white border border-[#E8E8E8] rounded-lg shadow-lg max-h-48 overflow-y-auto">
@@ -168,15 +140,14 @@ export function Editor() {
           </div>
         )}
 
-        {/* Textarea */}
-        <textarea
-          ref={textareaRef}
+        {/* Highlighted Textarea */}
+        <HighlightedTextarea
           value={content}
-          onChange={(e) => setContent(e.target.value)}
+          onChange={setContent}
           onKeyDown={handleKeyDown}
           placeholder={inputMode === 'input' ? "Write freely to empty your mind..." : "Search your notes..."}
-          className="w-full h-[44px] bg-transparent text-[15px] text-black placeholder-[#B2B2B2] focus:outline-none resize-none"
-          rows={1}
+          className="w-full text-[15px] text-black placeholder-[#B2B2B2]"
+          minHeight="44px"
         />
 
         {/* Image Previews */}

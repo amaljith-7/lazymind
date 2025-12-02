@@ -9,6 +9,7 @@ import { db } from './db';
  */
 export const parseNoteInput = (content: string): ParsedNote => {
   // Extract folders: #single_word (alphanumeric and underscores only)
+  // Ignore folders starting with zero-width space (\u200B) which indicates escaped tag
   const folderRegex = /(?:^|\s)#([a-z0-9_]+)/gi;
   const folders = Array.from(content.matchAll(folderRegex))
     .map(m => m[1].toLowerCase())
@@ -19,15 +20,21 @@ export const parseNoteInput = (content: string): ParsedNote => {
   const labelRegex = /!([^\n]+?)(?=\s\s|\n|$)/g;
   const labels = Array.from(content.matchAll(labelRegex))
     .map(m => m[1].trim())
+    .filter(l => !l.startsWith('\u200B')) // Ignore escaped labels
     .filter((v, i, a) => a.indexOf(v) === i); // deduplicate
 
   // Check if this is a todo (has #todo folder)
   const isTodo = folders.some(f => f === 'todo');
 
   // Clean text: remove folder and label markers
+  // We keep the escaped tags in the text but they won't be in folders/labels arrays
   let cleanText = content
     .replace(folderRegex, '') // remove #folders
-    .replace(labelRegex, '') // remove !labels
+    .replace(labelRegex, (match, p1) => {
+      // If it's an escaped label (starts with \u200B), keep it in the text
+      if (p1.startsWith('\u200B')) return match;
+      return ''; // Remove normal labels
+    })
     .replace(/\s+/g, ' ') // normalize whitespace
     .trim();
 

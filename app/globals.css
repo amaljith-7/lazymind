@@ -23,3 +23,11 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Placeholder for contenteditable */
+[contenteditable][data-placeholder]:empty:before {
+  content: attr(data-placeholder);
+  color: #B2B2B2;
+  pointer-events: none;
+  position: absolute;
+}
